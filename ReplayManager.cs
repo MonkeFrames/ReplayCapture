@@ -90,49 +90,6 @@ public class ReplayManager : MonoBehaviour
     internal void LateFallback()
     {
         if (Recording) Capture();
-        ApplyPose();
-    }
-
-    /// <summary>Pose every replay gorilla for the current replay time. Runs once per frame, before the camera is placed.</summary>
-    public void ApplyPose()
-    {
-        if (_posedFrame == UnityEngine.Time.frameCount)
-            return;
-        _posedFrame = UnityEngine.Time.frameCount;
-
-        if (!Viewing || Clip == null)
-            return;
-
-        float frame = (float)(Time * Clip.Rate);
-
-        bool showCams = Classes.Settings.current?.ShowCamerasInReplays ?? true;
-        foreach (CamTrack c in Clip.Cameras)
-        {
-            float lf = frame - c.StartFrame;
-            bool vis = showCams && c.FrameCount > 0 && lf >= -0.5f && lf <= c.FrameCount - 0.5f;
-            if (vis && c.Model == null)
-                c.Model = CamModel.Create("Replay Camera " + c.Name, c.Color, c.IsLocal ? "Your camera" : c.Name);
-            if (c.Model == null) continue;
-            if (c.Model.activeSelf != vis) c.Model.SetActive(vis);
-            if (!vis) continue;
-            c.Sample(lf, out Vector3 cp, out Quaternion cq, out _);
-            c.Model.transform.SetPositionAndRotation(cp, cq);
-            CamModel.FaceLabel(c.Model);
-        }
-        foreach (ReplayTrack t in Clip.Tracks)
-        {
-            ReplayPuppet p = t.Puppet;
-            if (p == null) continue;
-
-            float local = frame - t.StartFrame;
-            bool visible = !t.Hidden && local >= -0.5f && local <= t.FrameCount - 0.5f;
-
-            if (p.gameObject.activeSelf != visible)
-                p.gameObject.SetActive(visible);
-
-            if (visible)
-                t.Apply(local, p.transform, p.Parts);
-        }
     }
 
     private void OnEnable() => Application.onBeforeRender += OnBeforeRender;
@@ -142,8 +99,6 @@ public class ReplayManager : MonoBehaviour
     {
         if (Recording)
             Capture();
-
-        ApplyPose();
     }
 
     // =====================================================================
@@ -677,7 +632,7 @@ public class ReplayManager : MonoBehaviour
         }
         catch { }
 
-        foreach (VRRig rig in Object.FindObjectsByType<VRRig>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        foreach (VRRig rig in UnityEngine.Object.FindObjectsByType<VRRig>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
             if (rig.isOfflineVRRig)
                 return rig;
 
