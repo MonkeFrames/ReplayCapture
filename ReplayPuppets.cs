@@ -1,4 +1,3 @@
-using MonkeFrames.Editor.Components;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -9,7 +8,7 @@ namespace MonkeFrames.ReplayCapture.Replays;
 /// A script-free copy of a gorilla (meshes + skeleton only) that a replay moves around.
 /// Other Cameras can film it exactly like a live player.
 /// </summary>
-public class ReplayPuppet : CamSubject
+public class ReplayPuppet
 {
     public ReplayTrack Track;
     public Transform[] Parts = System.Array.Empty<Transform>();
@@ -17,16 +16,6 @@ public class ReplayPuppet : CamSubject
 
     internal readonly List<Object> Owned = new();   // copied materials / meshes to clean up
 
-    public override string DisplayName => Track?.Name ?? "Gorilla";
-    public override bool IsLocal => Track != null && Track.IsLocal;
-    public override bool IsReplay => true;
-    public override bool Available => this != null && gameObject.activeInHierarchy;
-    public override Transform Head => HeadNode != null ? HeadNode : transform;
-    public override Transform Hand(bool right)
-    {
-        Transform t = right ? RightHandNode : LeftHandNode;
-        return t != null ? t : Head;
-    }
 
     /// <summary>Free copied materials / meshes (OnDestroy isn't called for objects that were never active).</summary>
     public void ReleaseOwned()
@@ -36,8 +25,6 @@ public class ReplayPuppet : CamSubject
                 Destroy(o);
         Owned.Clear();
     }
-
-    private void OnDestroy() => ReleaseOwned();
 }
 
 /// <summary>Builds <see cref="ReplayPuppet"/>s from live gorillas (while recording) or from a saved replay.</summary>
@@ -213,48 +200,6 @@ public static class PuppetBuilder
         }
         track.Paths = paths.ToArray();
         liveParts = live.ToArray();
-
-        return Finish(ctx, track);
-    }
-
-    /// <summary>Load-time build: rebuild the gorilla from saved paths, using your own gorilla as the model.</summary>
-    public static ReplayPuppet BuildFromSaved(ReplayTrack track, VRRig model)
-    {
-        Transform src = model != null ? model.transform : null;
-        Ctx ctx = Begin(track, src);
-
-        if (src != null)
-        {
-            foreach (string path in track.RendererPaths)
-            {
-                Transform t = Find(src, path);
-                if (t == null) continue;
-                Renderer r = t.GetComponent<SkinnedMeshRenderer>();
-                if (r == null) r = t.GetComponent<MeshRenderer>();
-                // Name tags come from your own gorilla here, so they'd show your name: skip them.
-                if (r != null && r.GetComponent<TMP_Text>() == null)
-                    CopyRenderer(ctx, r, path);
-            }
-
-            // Tint the body with the player's colour.
-            if (!string.IsNullOrEmpty(track.MainSkinPath) && ctx.Nodes.TryGetValue(track.MainSkinPath, out Transform skin))
-            {
-                Renderer r = skin.GetComponent<Renderer>();
-                if (r != null && r.sharedMaterials.Length > 0 && r.sharedMaterials[0] != null)
-                {
-                    Material[] mats = r.sharedMaterials;
-                    Material m = new Material(mats[0]);
-                    ctx.Puppet.Owned.Add(m);
-                    m.color = track.Color;
-                    if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", track.Color);
-                    mats[0] = m;
-                    r.sharedMaterials = mats;
-                }
-            }
-        }
-
-        foreach (string p in track.Paths)
-            Node(ctx, p);
 
         return Finish(ctx, track);
     }
