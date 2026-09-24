@@ -5,7 +5,7 @@ using UnityEngine;
 namespace MonkeFrames.ReplayCapture;
 
 [BepInPlugin(PluginInfo.GUID, PluginInfo.Name, PluginInfo.Version)]
-public class Plugin : BepInPlugin
+public class Plugin : BaseUnityPlugin
 {
     public void Awake()
     {

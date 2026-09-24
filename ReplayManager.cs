@@ -34,7 +34,6 @@ public class ReplayManager : MonoBehaviour
     public double Time;
 
     public string BusyText { get; private set; } = "";
-    public readonly List<ReplayClip> Library = new();
 
     public float RecordedSeconds => Clip == null ? 0f : Clip.FrameCount / (float)Mathf.Max(1, Clip.Rate);
 
@@ -56,6 +55,14 @@ public class ReplayManager : MonoBehaviour
     private float[] _audioTmp = new float[4096];
     private readonly HashSet<VRRig> _failedRigs = new();
 
+    // ---------------- Viewing internals ----------------
+    private readonly HashSet<Renderer> _hiddenLive = new();
+    private float _nextHide;
+    private float _savedListenerVolume = -1f;
+    private int _posedFrame = -1;
+    private int _lastHead = -1;
+    private bool _audioPlaying;
+
     private AudioClip _mic;
     private string _micDevice;
     private bool _ownMic;
@@ -74,7 +81,6 @@ public class ReplayManager : MonoBehaviour
     private void Start()
     {
         try { Directory.CreateDirectory(Folder); } catch { }
-        RefreshLibrary();
 
         // Fallback for setups where Application.onBeforeRender isn't delivered.
         if (GetComponent<ReplayManagerLate>() == null)
@@ -85,6 +91,48 @@ public class ReplayManager : MonoBehaviour
     {
         if (Recording) Capture();
         ApplyPose();
+    }
+
+    /// <summary>Pose every replay gorilla for the current replay time. Runs once per frame, before the camera is placed.</summary>
+    public void ApplyPose()
+    {
+        if (_posedFrame == UnityEngine.Time.frameCount)
+            return;
+        _posedFrame = UnityEngine.Time.frameCount;
+
+        if (!Viewing || Clip == null)
+            return;
+
+        float frame = (float)(Time * Clip.Rate);
+
+        bool showCams = Classes.Settings.current?.ShowCamerasInReplays ?? true;
+        foreach (CamTrack c in Clip.Cameras)
+        {
+            float lf = frame - c.StartFrame;
+            bool vis = showCams && c.FrameCount > 0 && lf >= -0.5f && lf <= c.FrameCount - 0.5f;
+            if (vis && c.Model == null)
+                c.Model = CamModel.Create("Replay Camera " + c.Name, c.Color, c.IsLocal ? "Your camera" : c.Name);
+            if (c.Model == null) continue;
+            if (c.Model.activeSelf != vis) c.Model.SetActive(vis);
+            if (!vis) continue;
+            c.Sample(lf, out Vector3 cp, out Quaternion cq, out _);
+            c.Model.transform.SetPositionAndRotation(cp, cq);
+            CamModel.FaceLabel(c.Model);
+        }
+        foreach (ReplayTrack t in Clip.Tracks)
+        {
+            ReplayPuppet p = t.Puppet;
+            if (p == null) continue;
+
+            float local = frame - t.StartFrame;
+            bool visible = !t.Hidden && local >= -0.5f && local <= t.FrameCount - 0.5f;
+
+            if (p.gameObject.activeSelf != visible)
+                p.gameObject.SetActive(visible);
+
+            if (visible)
+                t.Apply(local, p.transform, p.Parts);
+        }
     }
 
     private void OnEnable() => Application.onBeforeRender += OnBeforeRender;
@@ -565,25 +613,6 @@ public class ReplayManager : MonoBehaviour
         catch { return false; }
     }
 
-    public void RefreshLibrary()
-    {
-        Library.Clear();
-        try
-        {
-            if (!Directory.Exists(Folder)) return;
-            foreach (string f in Directory.GetFiles(Folder, "*" + Extension))
-            {
-                try { Library.Add(ReplayClip.Load(f, headerOnly: true)); }
-                catch (Exception ex) { Console.WriteLine($"[MonkeFrames::Replay] Skipping {f}: {ex.Message}"); }
-            }
-            Library.Sort((a, b) => b.Created.CompareTo(a.Created));
-        }
-        catch (Exception ex)
-        {
-            Debug.Log($"[MonkeFrames::Replay] Library scan failed: {ex.Message}");
-        }
-    }
-
     private static void DestroyTrackObjects(ReplayTrack t)
     {
         if (t.Puppet != null)
@@ -621,7 +650,7 @@ public class ReplayManager : MonoBehaviour
 
     private static IEnumerable<VRRig> LiveRigs()
     {
-        VRRig local = CameraModes.LocalRig();
+        VRRig local = LocalRig();
         if (local != null && local.isActiveAndEnabled)
             yield return local;
 
@@ -637,6 +666,22 @@ public class ReplayManager : MonoBehaviour
 
             yield return rig;
         }
+    }
+
+    public static VRRig LocalRig()
+    {
+        try
+        {
+            if (GorillaTagger.Instance != null && GorillaTagger.Instance.offlineVRRig != null)
+                return GorillaTagger.Instance.offlineVRRig;
+        }
+        catch { }
+
+        foreach (VRRig rig in Object.FindObjectsByType<VRRig>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            if (rig.isOfflineVRRig)
+                return rig;
+
+        return null;
     }
 
     private static string KeyOf(VRRig rig)

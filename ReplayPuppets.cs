@@ -8,7 +8,7 @@ namespace MonkeFrames.ReplayCapture.Replays;
 /// A script-free copy of a gorilla (meshes + skeleton only) that a replay moves around.
 /// Other Cameras can film it exactly like a live player.
 /// </summary>
-public class ReplayPuppet
+public class ReplayPuppet : MonoBehaviour
 {
     public ReplayTrack Track;
     public Transform[] Parts = System.Array.Empty<Transform>();
@@ -22,7 +22,7 @@ public class ReplayPuppet
     {
         foreach (Object o in Owned)
             if (o != null)
-                Destroy(o);
+                UnityEngine.Object.Destroy(o);
         Owned.Clear();
     }
 }
